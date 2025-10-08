@@ -2,10 +2,8 @@ import rclpy
 from rclpy.node import Node
 
 from beamngpy import BeamNGpy, Scenario, Vehicle
-from beamngpy.sensors import *
 
-from beamng_msgs.msg import StateSensor, VehicleControl
-from beamng_sensor_publisher.msg import DamageTotal
+from beamng_ros2.publishers.sensors import SensorPublisher
 
 
 
@@ -23,64 +21,47 @@ class BeamNGBridge(Node):
 
         # Vehicle + State Sensor
         self.vehicle = Vehicle('ego', model='scintilla')
-        self.vehicle.attach_sensor('state_sensor', State())
-        self.vehicle.attach_sensor('electrics', Electrics())
-        self.vehicle.attach_sensor('damage', Damage())
-        self.vehicle.attach_sensor('gforces', GForces())
-        self.vehicle.attach_sensor('timer', Timer())
 
         # Scenario
-        scenario = Scenario('grass', 'ros2_bridge')
-        scenario.add_vehicle(self.vehicle, pos=(250, 250, 0))
+        scene = 'east_coast_usa'
+        scenario = Scenario(scene, 'ros2_bridge')
+        if scene == 'east_coast_usa':
+            scenario.add_vehicle(self.vehicle, pos=(-605, -353, 34))
+        else:
+            scenario.add_vehicle(self.vehicle, pos=(250, 250, 0))
         scenario.make(self.bng)
 
         self.bng.scenario.load(scenario)
         self.bng.scenario.start()
 
-        # Publisher
-        self.state_pub = self.create_publisher(StateSensor, 'beamng/state', 10)
-        self.control_pub = self.create_publisher(VehicleControl, 'beamng/vehicle_control', 10)
-        self.damage_pub = self.create_publisher(DamageTotal, 'beamng/damage_total', 10)
+        # Create the StatePublisher
+        self.state_pub = SensorPublisher.create('state', 'state', {})
+        self.state_pub.pre_scenario_start(self.vehicle)
+        self.state_pub.create_publisher(self)
 
-        # Timer to poll + publish
-        self.timer = self.create_timer(0.1, self.publish_state)  # 10 Hz
+        # Create the damage publisher
+        self.damage_pub = SensorPublisher.create('damage', 'damage', {})
+        self.damage_pub.pre_scenario_start(self.vehicle)
+        self.damage_pub.create_publisher(self)
 
-    def publish_state(self):
+        # Create the electrics publisher
+        self.electrics_pub = SensorPublisher.create('electrics', 'electrics', {})
+        self.electrics_pub.pre_scenario_start(self.vehicle)
+        self.electrics_pub.create_publisher(self)
 
-        # Poll sensors → updates vehicle.sensors
-        self.vehicle.poll_sensors()
-        state = self.vehicle.sensors['state_sensor']
-        elec = self.vehicle.sensors['electrics']
-        damage = self.vehicle.sensors['damage']
-        gforces = self.vehicle.sensors['gforces']
-        timer_values = self.vehicle.sensors['timer']
-        import pdb; pdb.set_trace()
+        # Create timer to periodically publish
+        self.timer = self.create_timer(0.05, self.publish_data)
 
-        # Fill State ROS message
-        msg = StateSensor()
-        msg.position.x, msg.position.y, msg.position.z = state['pos']
-        msg.velocity.x, msg.velocity.y, msg.velocity.z = state['vel']
+        
+    def publish_data(self):
+        # Poll BeamNG for new sensor data
+        self.vehicle.sensors.poll()
 
-        # Fill control ROS message
-        vc = VehicleControl()
-        vc.steering = elec['steering']
-        vc.throttle = elec['throttle']
-        vc.brake = elec['brake']
-        vc.parkingbrake = elec['parkingbrake']
-        vc.clutch = elec['clutch']
-
-        # Fill the damaga ROS message
-        damage_total = DamageTotal()
-        damage_total.lowpressure = damage['lowpressure']
-        damage_total.damage = damage['damage']
-        damage_total.part_damage = damage['part_damage']
-        damage_total.damage_ext = damage['damage_ext']
-
-        # Publish
-        self.state_pub.publish(msg)
-        self.control_pub.publish(vc)
-        self.damage_pub.publish(damage_total)
-        # self.get_logger().info(f"Published state at pos={msg.position.x:.2f},{msg.position.y:.2f}")
+        # # Publish using built-in publisher
+        # import pdb; pdb.set_trace()
+        self.state_pub.publish(self.get_clock().now())
+        self.damage_pub.publish(self.get_clock().now())
+        self.electrics_pub.publish(self.get_clock().now())
 
 
 def main(args=None):

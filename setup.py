@@ -25,6 +25,7 @@ setup(
     entry_points={
     'console_scripts': [
         'sensor_publisher = beamng_sensor_publisher.sensor_publisher:main',
+        'sensor_publisher2 = beamng_sensor_publisher.sensor_publisher2:main',
     ],
 },
 )
